@@ -1,6 +1,6 @@
 {
   "name": "mcp-sqlite",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Model Context Protocol (MCP) server that provides comprehensive SQLite database interaction capabilities",
   "main": "mcp-sqlite-server.js",
   "bin": {
