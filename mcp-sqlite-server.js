@@ -217,7 +217,7 @@ async function main() {
         "Insert a new record into a table with specified data",
         { 
             table: z.string(),
-            data: z.record(z.string(), z.any())
+            data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, data }) => {
             try {
