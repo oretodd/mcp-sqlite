@@ -308,8 +308,8 @@ async function main() {
         "Update records in a table based on specified conditions",
         { 
             table: z.string(),
-            data: z.record(z.string(), z.any()),
-            conditions: z.record(z.string(), z.any())
+            data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, data, conditions }) => {
             try {
