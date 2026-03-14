@@ -351,7 +351,7 @@ async function main() {
         "Delete records from a table based on specified conditions",
         { 
             table: z.string(),
-            conditions: z.record(z.string(), z.any())
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, conditions }) => {
             try {
