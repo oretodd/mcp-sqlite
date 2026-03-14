@@ -217,7 +217,7 @@ async function main() {
         "Insert a new record into a table with specified data",
         { 
             table: z.string(),
-            data: z.record(z.any())
+            data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, data }) => {
             try {
@@ -255,7 +255,7 @@ async function main() {
         "Read records from a table with optional conditions, limit, and offset",
         { 
             table: z.string(),
-            conditions: z.record(z.any()).optional(),
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
             limit: z.number().optional(),
             offset: z.number().optional()
         },
@@ -308,8 +308,8 @@ async function main() {
         "Update records in a table based on specified conditions",
         { 
             table: z.string(),
-            data: z.record(z.any()),
-            conditions: z.record(z.any())
+            data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, data, conditions }) => {
             try {
@@ -351,7 +351,7 @@ async function main() {
         "Delete records from a table based on specified conditions",
         { 
             table: z.string(),
-            conditions: z.record(z.any())
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
         },
         async ({ table, conditions }) => {
             try {

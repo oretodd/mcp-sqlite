@@ -2,6 +2,10 @@
 
 All notable changes to the MCP SQLite Server will be documented in this file.
 
+## [1.0.8] - 2026-03-14
+### 🐛 Fixed
+- Fixed Zod v4 compatibility by using explicit string keys
+
 ## [1.0.7] - 2025-06-02
 ### 📦 Updated
 - Added a "description" parameter to each tool definitions for better Agent selection
