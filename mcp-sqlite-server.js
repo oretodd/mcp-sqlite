@@ -255,7 +255,7 @@ async function main() {
         "Read records from a table with optional conditions, limit, and offset",
         { 
             table: z.string(),
-            conditions: z.record(z.string(), z.any()).optional(),
+            conditions: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
             limit: z.number().optional(),
             offset: z.number().optional()
         },
