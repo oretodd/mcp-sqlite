@@ -2,6 +2,13 @@
 
 All notable changes to the MCP SQLite Server will be documented in this file.
 
+## [1.0.9] - 2026-04-04
+### 🛡️ Security
+- Fixed SQL injection vulnerability (CWE-89) in all CRUD operations and `get_table_schema`
+- Table names are now validated against `sqlite_master` before query construction
+- Column names are now validated against the target table's schema
+- All SQL identifiers are properly quoted with double-quote escaping
+
 ## [1.0.8] - 2026-03-14
 ### 🐛 Fixed
 - Fixed Zod v4 compatibility by using explicit string keys
