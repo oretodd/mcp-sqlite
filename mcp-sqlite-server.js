@@ -10,7 +10,7 @@ const path = require('path');
 class SQLiteHandler {
     constructor(dbPath) {
         this.dbPath = dbPath;
-        
+
         // Open the database without logging
         this.db = new sqlite3.Database(dbPath, (err) => {
             if (err) {
@@ -52,8 +52,35 @@ class SQLiteHandler {
         );
     }
 
+    async validateTableName(tableName) {
+        const tables = await this.executeQuery(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+            [tableName]
+        );
+        if (tables.length === 0) {
+            throw new Error(`Table "${tableName}" does not exist`);
+        }
+    }
+
+    async validateColumnNames(tableName, columnNames) {
+        const schema = await this.executeQuery(
+            `PRAGMA table_info(${this.quoteIdentifier(tableName)})`
+        );
+        const validColumns = new Set(schema.map(col => col.name));
+        for (const col of columnNames) {
+            if (!validColumns.has(col)) {
+                throw new Error(`Column "${col}" does not exist in table "${tableName}"`);
+            }
+        }
+    }
+
+    quoteIdentifier(name) {
+        return `"${name.replace(/"/g, '""')}"`;
+    }
+
     async getTableSchema(tableName) {
-        return this.executeQuery(`PRAGMA table_info(${tableName})`);
+        await this.validateTableName(tableName);
+        return this.executeQuery(`PRAGMA table_info(${this.quoteIdentifier(tableName)})`);
     }
 }
 
@@ -221,11 +248,13 @@ async function main() {
         },
         async ({ table, data }) => {
             try {
+                await handler.validateTableName(table);
                 const columns = Object.keys(data);
+                await handler.validateColumnNames(table, columns);
                 const placeholders = columns.map(() => '?').join(', ');
                 const values = Object.values(data);
-                
-                const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`;
+
+                const sql = `INSERT INTO ${handler.quoteIdentifier(table)} (${columns.map(c => handler.quoteIdentifier(c)).join(', ')}) VALUES (${placeholders})`;
                 const result = await handler.executeRun(sql, values);
                 
                 return {
@@ -261,19 +290,22 @@ async function main() {
         },
         async ({ table, conditions, limit, offset }) => {
             try {
-                let sql = `SELECT * FROM ${table}`;
+                await handler.validateTableName(table);
+                let sql = `SELECT * FROM ${handler.quoteIdentifier(table)}`;
                 const values = [];
-                
+
                 // Add WHERE clause if conditions provided
                 if (conditions && Object.keys(conditions).length > 0) {
+                    const conditionColumns = Object.keys(conditions);
+                    await handler.validateColumnNames(table, conditionColumns);
                     const whereConditions = Object.entries(conditions).map(([column, value]) => {
                         values.push(value);
-                        return `${column} = ?`;
+                        return `${handler.quoteIdentifier(column)} = ?`;
                     }).join(' AND ');
-                    
+
                     sql += ` WHERE ${whereConditions}`;
                 }
-                
+
                 // Add LIMIT and OFFSET
                 if (limit !== undefined) {
                     sql += ` LIMIT ${limit}`;
@@ -313,15 +345,19 @@ async function main() {
         },
         async ({ table, data, conditions }) => {
             try {
+                await handler.validateTableName(table);
+                const allColumns = [...Object.keys(data), ...Object.keys(conditions)];
+                await handler.validateColumnNames(table, allColumns);
+
                 // Build SET clause
-                const setClause = Object.keys(data).map(key => `${key} = ?`).join(', ');
+                const setClause = Object.keys(data).map(key => `${handler.quoteIdentifier(key)} = ?`).join(', ');
                 const setValues = Object.values(data);
-                
+
                 // Build WHERE clause
-                const whereClause = Object.keys(conditions).map(key => `${key} = ?`).join(' AND ');
+                const whereClause = Object.keys(conditions).map(key => `${handler.quoteIdentifier(key)} = ?`).join(' AND ');
                 const whereValues = Object.values(conditions);
-                
-                const sql = `UPDATE ${table} SET ${setClause} WHERE ${whereClause}`;
+
+                const sql = `UPDATE ${handler.quoteIdentifier(table)} SET ${setClause} WHERE ${whereClause}`;
                 const result = await handler.executeRun(sql, [...setValues, ...whereValues]);
                 
                 return {
@@ -355,11 +391,15 @@ async function main() {
         },
         async ({ table, conditions }) => {
             try {
+                await handler.validateTableName(table);
+                const conditionColumns = Object.keys(conditions);
+                await handler.validateColumnNames(table, conditionColumns);
+
                 // Build WHERE clause
-                const whereClause = Object.keys(conditions).map(key => `${key} = ?`).join(' AND ');
+                const whereClause = conditionColumns.map(key => `${handler.quoteIdentifier(key)} = ?`).join(' AND ');
                 const values = Object.values(conditions);
-                
-                const sql = `DELETE FROM ${table} WHERE ${whereClause}`;
+
+                const sql = `DELETE FROM ${handler.quoteIdentifier(table)} WHERE ${whereClause}`;
                 const result = await handler.executeRun(sql, values);
                 
                 return {
