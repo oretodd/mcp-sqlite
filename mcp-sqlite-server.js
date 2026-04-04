@@ -64,7 +64,7 @@ class SQLiteHandler {
 
     async validateColumnNames(tableName, columnNames) {
         const schema = await this.executeQuery(
-            `PRAGMA table_info("${tableName.replace(/"/g, '""')}")`
+            `PRAGMA table_info(${this.quoteIdentifier(tableName)})`
         );
         const validColumns = new Set(schema.map(col => col.name));
         for (const col of columnNames) {
