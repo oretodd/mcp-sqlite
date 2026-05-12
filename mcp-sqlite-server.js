@@ -8,18 +8,36 @@ const { z } = require('zod');
 const path = require('path');
 
 class SQLiteHandler {
-    constructor(dbPath) {
+    constructor(dbPath, idleTimeoutMs) {
         this.dbPath = dbPath;
+        this.db = null;
+        this.idleTimeoutMs = idleTimeoutMs;
+        this._idleTimer = null;
+    }
 
-        // Open the database without logging
-        this.db = new sqlite3.Database(dbPath, (err) => {
-            if (err) {
-                console.error(`Error opening database: ${err.message}`);
-            }
+    open() {
+        this.db = new sqlite3.Database(this.dbPath, err => {
+            if (err) console.error(`[mcp-sqlite] open error: ${err.message}`);
         });
     }
 
+    close() {
+        if (!this.db) return;
+        this.db.close();
+        this.db = null;
+    }
+
+    ensureOpen() {
+        if (!this.db) this.open();
+        clearTimeout(this._idleTimer);
+        if (this.idleTimeoutMs > 0) {
+            this._idleTimer = setTimeout(() => this.close(), this.idleTimeoutMs);
+            this._idleTimer.unref();
+        }
+    }
+
     async executeQuery(sql, values = []) {
+        this.ensureOpen();
         return new Promise((resolve, reject) => {
             this.db.all(sql, values, (err, rows) => {
                 if (err) {
@@ -32,6 +50,7 @@ class SQLiteHandler {
     }
 
     async executeRun(sql, values = []) {
+        this.ensureOpen();
         return new Promise((resolve, reject) => {
             this.db.run(sql, values, function(err) {
                 if (err) {
@@ -89,7 +108,12 @@ async function main() {
     
     // Resolve to absolute path if relative
     const absoluteDbPath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
-    const handler = new SQLiteHandler(absoluteDbPath);
+    const idleTimeoutSecs = parseInt(process.env.SQLITE_IDLE_TIMEOUT ?? '60', 10);
+    if (!existsSync(absoluteDbPath)) {
+        console.error(`[mcp-sqlite] Database not found: ${absoluteDbPath}`);
+        process.exit(1);
+    }
+    const handler = new SQLiteHandler(absoluteDbPath, idleTimeoutSecs * 1000);
     const server = new McpServer({
         name: "mcp-sqlite-server",
         version: "1.0.0"
