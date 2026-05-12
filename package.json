@@ -1,10 +1,10 @@
 {
-  "name": "mcp-sqlite",
+  "name": "oretodd-mcp-sqlite",
   "version": "1.0.9",
-  "description": "Model Context Protocol (MCP) server that provides comprehensive SQLite database interaction capabilities",
+  "description": "Fork of jparkerweb/mcp-sqlite with idle-connection timeout support",
   "main": "mcp-sqlite-server.js",
   "bin": {
-    "mcp-sqlite-server": "./mcp-sqlite-server.js"
+    "oretodd-mcp-sqlite": "./mcp-sqlite-server.js"
   },
   "type": "commonjs",
   "files": [
@@ -18,19 +18,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jparkerweb/mcp-sqlite.git"
+    "url": "https://github.com/oretodd/mcp-sqlite.git"
   },
-  "homepage": "https://github.com/jparkerweb/mcp-sqlite#readme",
+  "homepage": "https://github.com/oretodd/mcp-sqlite#readme",
   "bugs": {
-    "url": "https://github.com/jparkerweb/mcp-sqlite/issues",
-    "email": "equilllabs@gmail.com"
+    "url": "https://github.com/oretodd/mcp-sqlite/issues"
   },
-  "author": "Justin Parker <jparkerweb@gmail.com> (https://www.equilllabs.com)",
+  "author": "Todd Robertson",
   "license": "ISC",
   "scripts": {
     "test": "npx @modelcontextprotocol/inspector mcp-sqlite-server.js",
     "clean": "npx rimraf node_modules package-lock.json && npm install",
-    "postinstall": "node -e \"console.log('\\nMCP SQLite server installed! Run with: npx mcp-sqlite-server <database-path>')\""
+    "postinstall": "node -e \"console.log('\\nMCP SQLite server installed! Run with: npx oretodd-mcp-sqlite <database-path>')\""
   },
   "keywords": [
     "mcp",
@@ -45,6 +44,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "zod": "^3.22.4"
   }
 }
