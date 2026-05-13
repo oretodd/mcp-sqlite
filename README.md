@@ -1,21 +1,16 @@
 # oretodd-mcp-sqlite
 
-Fork of [jparkerweb/mcp-sqlite](https://github.com/jparkerweb/mcp-sqlite) v1.0.9 with an **idle-connection timeout** feature.
+Fork of [jparkerweb/mcp-sqlite](https://github.com/jparkerweb/mcp-sqlite) v1.0.9 that **does not hold the database file open between tool calls**.
 
 ## What's different from upstream
 
-The upstream package holds its SQLite file handle open for the entire process lifetime. On Windows, this blocks deletion and rename of the database file.
+The upstream package opens the SQLite file once at startup and keeps the handle for the entire process lifetime. On Windows that blocks any attempt to delete, move, or rename the database file.
 
-This fork adds:
-- **Lazy connection open**: the DB handle is not opened until the first tool call
-- **Idle-connection timeout**: after N seconds of inactivity, the handle is closed and the file is released
-- **Startup path validation**: if the configured DB path doesn't exist, the server exits immediately with a clear error instead of running silently broken
+This fork:
+- **Opens the DB on each tool call and closes it before returning** — the file handle (plus any `-wal` / `-shm` files) is fully released by the OS the moment the tool call completes, so the DB file is freely movable/deletable between calls.
+- **Validates the DB path at startup** — exits immediately with a clear error if the configured path does not exist, instead of running silently broken.
 
-## Configuration
-
-| Env var | Default | Description |
-|---------|---------|-------------|
-| `SQLITE_IDLE_TIMEOUT` | `60` | Seconds of inactivity before closing the DB handle. Set to `0` to disable (keep open for process lifetime). |
+No configuration is required.
 
 ## Setup
 
@@ -24,10 +19,7 @@ This fork adds:
   "mcpServers": {
     "sqlite": {
       "command": "npx",
-      "args": ["-y", "oretodd-mcp-sqlite", "<path-to-your-sqlite-database.db>"],
-      "env": {
-        "SQLITE_IDLE_TIMEOUT": "60"
-      }
+      "args": ["-y", "oretodd-mcp-sqlite", "<path-to-your-sqlite-database.db>"]
     }
   }
 }

@@ -2,6 +2,14 @@
 
 All notable changes to the MCP SQLite Server will be documented in this file.
 
+## [1.1.0] - 2026-05-12
+### Changed
+- Replaced the idle-timeout connection model with **per-tool-call connections**: the DB is opened on each MCP tool invocation and the handle is fully closed (awaited) before the tool returns. The database file (and any `-wal`/`-shm` files) is therefore movable/deletable immediately between calls — the lock window is bounded by the duration of an individual call.
+- Removed `SQLITE_IDLE_TIMEOUT` environment variable (no longer applicable).
+
+### Fixed
+- `db.close()` is now awaited, so the OS file handle is guaranteed released before the tool response is sent. Previously, close was fire-and-forget and a subsequent rename/delete could still race against an in-flight close.
+
 ## [1.0.9] - 2026-04-04
 ### 🛡️ Security
 - Fixed SQL injection vulnerability (CWE-89) in all CRUD operations and `get_table_schema`

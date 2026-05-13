@@ -7,60 +7,48 @@ const { existsSync, statSync } = require('node:fs');
 const { z } = require('zod');
 const path = require('path');
 
-class SQLiteHandler {
-    constructor(dbPath, idleTimeoutMs) {
+// Opens the SQLite file for the duration of a single MCP tool call and
+// guarantees the OS file handle is fully released before the call returns.
+// The DB file is therefore movable/deletable between tool invocations.
+class SQLiteSession {
+    constructor(dbPath) {
         this.dbPath = dbPath;
         this.db = null;
-        this.idleTimeoutMs = idleTimeoutMs;
-        this._idleTimer = null;
     }
 
-    open() {
-        this.db = new sqlite3.Database(this.dbPath, err => {
-            if (err) console.error(`[mcp-sqlite] open error: ${err.message}`);
+    async open() {
+        return new Promise((resolve, reject) => {
+            this.db = new sqlite3.Database(this.dbPath, err => {
+                if (err) reject(err); else resolve();
+            });
         });
     }
 
-    close() {
+    async close() {
         if (!this.db) return;
-        this.db.close();
+        const db = this.db;
         this.db = null;
-    }
-
-    ensureOpen() {
-        if (!this.db) this.open();
-        clearTimeout(this._idleTimer);
-        if (this.idleTimeoutMs > 0) {
-            this._idleTimer = setTimeout(() => this.close(), this.idleTimeoutMs);
-            this._idleTimer.unref();
-        }
+        await new Promise(resolve => {
+            db.close(err => {
+                if (err) console.error(`[mcp-sqlite] close error: ${err.message}`);
+                resolve();
+            });
+        });
     }
 
     async executeQuery(sql, values = []) {
-        this.ensureOpen();
         return new Promise((resolve, reject) => {
             this.db.all(sql, values, (err, rows) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
+                if (err) reject(err); else resolve(rows);
             });
         });
     }
 
     async executeRun(sql, values = []) {
-        this.ensureOpen();
         return new Promise((resolve, reject) => {
             this.db.run(sql, values, function(err) {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve({
-                        lastID: this.lastID,
-                        changes: this.changes
-                    });
-                }
+                if (err) reject(err);
+                else resolve({ lastID: this.lastID, changes: this.changes });
             });
         });
     }
@@ -103,17 +91,27 @@ class SQLiteHandler {
     }
 }
 
+// Runs `fn` against a freshly-opened SQLiteSession and guarantees the
+// connection is closed before returning, even on error.
+async function withSession(dbPath, fn) {
+    const session = new SQLiteSession(dbPath);
+    await session.open();
+    try {
+        return await fn(session);
+    } finally {
+        await session.close();
+    }
+}
+
 async function main() {
     const dbPath = process.argv[2] || 'mydatabase.db';
-    
+
     // Resolve to absolute path if relative
     const absoluteDbPath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
-    const idleTimeoutSecs = parseInt(process.env.SQLITE_IDLE_TIMEOUT ?? '60', 10);
     if (!existsSync(absoluteDbPath)) {
         console.error(`[mcp-sqlite] Database not found: ${absoluteDbPath}`);
         process.exit(1);
     }
-    const handler = new SQLiteHandler(absoluteDbPath, idleTimeoutSecs * 1000);
     const server = new McpServer({
         name: "mcp-sqlite-server",
         version: "1.0.0"
@@ -136,9 +134,9 @@ async function main() {
                 }
                 
                 // Get table count
-                const tableCountResult = await handler.executeQuery(
+                const tableCountResult = await withSession(absoluteDbPath, s => s.executeQuery(
                     "SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                );
+                ));
                 
                 return {
                     content: [{ 
@@ -174,7 +172,7 @@ async function main() {
         },
         async ({ sql, values }) => {
             try {
-                const results = await handler.executeQuery(sql, values);
+                const results = await withSession(absoluteDbPath, s => s.executeQuery(sql, values));
                 return {
                     content: [{ 
                         type: "text", 
@@ -200,7 +198,7 @@ async function main() {
         {},
         async () => {
             try {
-                const tables = await handler.listTables();
+                const tables = await withSession(absoluteDbPath, s => s.listTables());
                 
                 if (tables.length === 0) {
                     return {
@@ -243,7 +241,7 @@ async function main() {
         },
         async ({ tableName }) => {
             try {
-                const schema = await handler.getTableSchema(tableName);
+                const schema = await withSession(absoluteDbPath, s => s.getTableSchema(tableName));
                 return {
                     content: [{ 
                         type: "text", 
@@ -272,15 +270,17 @@ async function main() {
         },
         async ({ table, data }) => {
             try {
-                await handler.validateTableName(table);
-                const columns = Object.keys(data);
-                await handler.validateColumnNames(table, columns);
-                const placeholders = columns.map(() => '?').join(', ');
-                const values = Object.values(data);
+                const result = await withSession(absoluteDbPath, async s => {
+                    await s.validateTableName(table);
+                    const columns = Object.keys(data);
+                    await s.validateColumnNames(table, columns);
+                    const placeholders = columns.map(() => '?').join(', ');
+                    const values = Object.values(data);
 
-                const sql = `INSERT INTO ${handler.quoteIdentifier(table)} (${columns.map(c => handler.quoteIdentifier(c)).join(', ')}) VALUES (${placeholders})`;
-                const result = await handler.executeRun(sql, values);
-                
+                    const sql = `INSERT INTO ${s.quoteIdentifier(table)} (${columns.map(c => s.quoteIdentifier(c)).join(', ')}) VALUES (${placeholders})`;
+                    return s.executeRun(sql, values);
+                });
+
                 return {
                     content: [{ 
                         type: "text", 
@@ -314,32 +314,32 @@ async function main() {
         },
         async ({ table, conditions, limit, offset }) => {
             try {
-                await handler.validateTableName(table);
-                let sql = `SELECT * FROM ${handler.quoteIdentifier(table)}`;
-                const values = [];
+                const results = await withSession(absoluteDbPath, async s => {
+                    await s.validateTableName(table);
+                    let sql = `SELECT * FROM ${s.quoteIdentifier(table)}`;
+                    const values = [];
 
-                // Add WHERE clause if conditions provided
-                if (conditions && Object.keys(conditions).length > 0) {
-                    const conditionColumns = Object.keys(conditions);
-                    await handler.validateColumnNames(table, conditionColumns);
-                    const whereConditions = Object.entries(conditions).map(([column, value]) => {
-                        values.push(value);
-                        return `${handler.quoteIdentifier(column)} = ?`;
-                    }).join(' AND ');
+                    if (conditions && Object.keys(conditions).length > 0) {
+                        const conditionColumns = Object.keys(conditions);
+                        await s.validateColumnNames(table, conditionColumns);
+                        const whereConditions = Object.entries(conditions).map(([column, value]) => {
+                            values.push(value);
+                            return `${s.quoteIdentifier(column)} = ?`;
+                        }).join(' AND ');
 
-                    sql += ` WHERE ${whereConditions}`;
-                }
-
-                // Add LIMIT and OFFSET
-                if (limit !== undefined) {
-                    sql += ` LIMIT ${limit}`;
-                    if (offset !== undefined) {
-                        sql += ` OFFSET ${offset}`;
+                        sql += ` WHERE ${whereConditions}`;
                     }
-                }
-                
-                const results = await handler.executeQuery(sql, values);
-                
+
+                    if (limit !== undefined) {
+                        sql += ` LIMIT ${limit}`;
+                        if (offset !== undefined) {
+                            sql += ` OFFSET ${offset}`;
+                        }
+                    }
+
+                    return s.executeQuery(sql, values);
+                });
+
                 return {
                     content: [{ 
                         type: "text", 
@@ -369,21 +369,21 @@ async function main() {
         },
         async ({ table, data, conditions }) => {
             try {
-                await handler.validateTableName(table);
-                const allColumns = [...Object.keys(data), ...Object.keys(conditions)];
-                await handler.validateColumnNames(table, allColumns);
+                const result = await withSession(absoluteDbPath, async s => {
+                    await s.validateTableName(table);
+                    const allColumns = [...Object.keys(data), ...Object.keys(conditions)];
+                    await s.validateColumnNames(table, allColumns);
 
-                // Build SET clause
-                const setClause = Object.keys(data).map(key => `${handler.quoteIdentifier(key)} = ?`).join(', ');
-                const setValues = Object.values(data);
+                    const setClause = Object.keys(data).map(key => `${s.quoteIdentifier(key)} = ?`).join(', ');
+                    const setValues = Object.values(data);
 
-                // Build WHERE clause
-                const whereClause = Object.keys(conditions).map(key => `${handler.quoteIdentifier(key)} = ?`).join(' AND ');
-                const whereValues = Object.values(conditions);
+                    const whereClause = Object.keys(conditions).map(key => `${s.quoteIdentifier(key)} = ?`).join(' AND ');
+                    const whereValues = Object.values(conditions);
 
-                const sql = `UPDATE ${handler.quoteIdentifier(table)} SET ${setClause} WHERE ${whereClause}`;
-                const result = await handler.executeRun(sql, [...setValues, ...whereValues]);
-                
+                    const sql = `UPDATE ${s.quoteIdentifier(table)} SET ${setClause} WHERE ${whereClause}`;
+                    return s.executeRun(sql, [...setValues, ...whereValues]);
+                });
+
                 return {
                     content: [{ 
                         type: "text", 
@@ -415,17 +415,18 @@ async function main() {
         },
         async ({ table, conditions }) => {
             try {
-                await handler.validateTableName(table);
-                const conditionColumns = Object.keys(conditions);
-                await handler.validateColumnNames(table, conditionColumns);
+                const result = await withSession(absoluteDbPath, async s => {
+                    await s.validateTableName(table);
+                    const conditionColumns = Object.keys(conditions);
+                    await s.validateColumnNames(table, conditionColumns);
 
-                // Build WHERE clause
-                const whereClause = conditionColumns.map(key => `${handler.quoteIdentifier(key)} = ?`).join(' AND ');
-                const values = Object.values(conditions);
+                    const whereClause = conditionColumns.map(key => `${s.quoteIdentifier(key)} = ?`).join(' AND ');
+                    const values = Object.values(conditions);
 
-                const sql = `DELETE FROM ${handler.quoteIdentifier(table)} WHERE ${whereClause}`;
-                const result = await handler.executeRun(sql, values);
-                
+                    const sql = `DELETE FROM ${s.quoteIdentifier(table)} WHERE ${whereClause}`;
+                    return s.executeRun(sql, values);
+                });
+
                 return {
                     content: [{ 
                         type: "text", 

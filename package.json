@@ -1,7 +1,7 @@
 {
   "name": "oretodd-mcp-sqlite",
-  "version": "1.0.9",
-  "description": "Fork of jparkerweb/mcp-sqlite with idle-connection timeout support",
+  "version": "1.1.0",
+  "description": "Fork of jparkerweb/mcp-sqlite that opens the DB per tool call so the file isn't held open between calls",
   "main": "mcp-sqlite-server.js",
   "bin": {
     "oretodd-mcp-sqlite": "./mcp-sqlite-server.js"
